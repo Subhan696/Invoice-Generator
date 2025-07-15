@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Invoice Generator</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="container py-5">
+  <h1>Invoice Generator</h1>
+  <form id="invoiceForm">
+    <div class="mb-3">
+      <label for="client" class="form-label">Client Name</label>
+      <input type="text" class="form-control" id="client" required>
+    </div>
+    <div id="items">
+      <div class="row mb-2">
+        <div class="col">
+          <input type="text" class="form-control" placeholder="Item Name" required>
+        </div>
+        <div class="col">
+          <input type="number" class="form-control" placeholder="Price" required>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="btn btn-secondary mb-3" id="addItem">Add Item</button>
+    <br>
+    <button type="submit" class="btn btn-primary">Generate Invoice</button>
+  </form>
+  <div id="downloadLink" class="mt-4"></div>
+  <script>
+    document.getElementById('addItem').onclick = function() {
+      const itemsDiv = document.getElementById('items');
+      const row = document.createElement('div');
+      row.className = 'row mb-2';
+      row.innerHTML = `
+        <div class="col">
+          <input type="text" class="form-control" placeholder="Item Name" required>
+        </div>
+        <div class="col">
+          <input type="number" class="form-control" placeholder="Price" required>
+        </div>
+      `;
+      itemsDiv.appendChild(row);
+    };
+
+    document.getElementById('invoiceForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const client = document.getElementById('client').value;
+      const itemRows = document.querySelectorAll('#items .row');
+      const items = Array.from(itemRows).map(row => {
+        const [name, price] = row.querySelectorAll('input');
+        return { name: name.value, price: price.value };
+      });
+
+      const res = await fetch('/invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client, items })
+      });
+      const data = await res.json();
+      document.getElementById('downloadLink').innerHTML =
+        `<a href="${data.url}" class="btn btn-success" download>Download Invoice PDF</a>`;
+    };
+  </script>
+</body>
+</html> 

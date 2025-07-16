@@ -6,11 +6,78 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const upload = multer({ dest: path.join(__dirname, 'public', 'uploads') });
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+
+app.use(session({
+  secret: 'supersecretkey',
+  resave: false,
+  saveUninitialized: false
+}));
+
+const USERS_FILE = path.join(__dirname, 'users.json');
+function loadUsers() {
+  if (!fs.existsSync(USERS_FILE)) return [];
+  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+}
+function saveUsers(users) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+// Registration endpoint
+app.post('/register', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const users = loadUsers();
+  if (users.find(u => u.username === username)) {
+    return res.status(400).json({ error: 'Username already exists' });
+  }
+  const hashed = await bcrypt.hash(password, 10);
+  users.push({ username, password: hashed });
+  saveUsers(users);
+  req.session.user = { username };
+  res.json({ success: true });
+});
+
+// Login endpoint
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  const users = loadUsers();
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(400).json({ error: 'Invalid credentials' });
+  const match = await bcrypt.compare(password, user.password);
+  if (!match) return res.status(400).json({ error: 'Invalid credentials' });
+  req.session.user = { username };
+  res.json({ success: true });
+});
+
+// Serve login page for unauthenticated users
+app.get('/', (req, res, next) => {
+  if (!req.session.user) {
+    return res.sendFile(path.join(__dirname, 'public', 'login.html'));
+  }
+  return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Static files (must come after the above route)
 app.use(express.static('public'));
+
+// Redirect /logout to login page after logout
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.redirect('/');
+  });
+});
+
+// Auth middleware
+function requireAuth(req, res, next) {
+  if (!req.session.user) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}
 
 // Helper to get and increment invoice number
 function getNextInvoiceNumber() {
@@ -23,8 +90,8 @@ function getNextInvoiceNumber() {
   return number;
 }
 
-// POST /invoice - Generate PDF and send download link
-app.post('/invoice', upload.single('logo'), (req, res) => {
+// Protect invoice route
+app.post('/invoice', requireAuth, upload.single('logo'), (req, res) => {
   const { client, clientAddress, clientEmail, clientPhone, items, companyName, companyAddress, companyContact, taxRate, discount, paymentTerms, notes, invoiceDate, currency } = req.body;
   const curr = currency || '$';
   const invoiceNumber = getNextInvoiceNumber();
@@ -120,9 +187,25 @@ app.post('/invoice', upload.single('logo'), (req, res) => {
 
   doc.end();
 
-  doc.on('finish', () => {
-    res.json({ url: `/${filename}` });
+  let responded = false;
+  function sendResponse() {
+    if (!responded) {
+      responded = true;
+      console.log('Sending response:', { url: `/${filename}` });
+      res.json({ url: `/${filename}` });
+    }
+  }
+
+  doc.on('finish', sendResponse);
+  doc.on('error', (err) => {
+    console.error('PDFKit error:', err);
+    if (!responded) {
+      responded = true;
+      res.status(500).json({ error: 'Failed to generate PDF' });
+    }
   });
+  // Fallback: send response after 2 seconds if not already sent
+  setTimeout(sendResponse, 2000);
 });
 
 const PORT = 3000;

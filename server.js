@@ -8,6 +8,7 @@ const multer = require('multer');
 const upload = multer({ dest: path.join(__dirname, 'public', 'uploads') });
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors());
@@ -206,6 +207,49 @@ app.post('/invoice', requireAuth, upload.single('logo'), (req, res) => {
   });
   // Fallback: send response after 2 seconds if not already sent
   setTimeout(sendResponse, 2000);
+});
+
+// Email sending endpoint
+app.post('/send-invoice-email', async (req, res) => {
+  const { filename, clientEmail } = req.body;
+  if (!filename || !clientEmail) {
+    return res.status(400).json({ error: 'Missing filename or client email' });
+  }
+  const filePath = path.join(__dirname, 'public', filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Invoice file not found' });
+  }
+  try {
+    // Use Ethereal for test emails (replace with real SMTP for production)
+    let testAccount = await nodemailer.createTestAccount();
+    let transporter = nodemailer.createTransport({
+      host: testAccount.smtp.host,
+      port: testAccount.smtp.port,
+      secure: testAccount.smtp.secure,
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass
+      }
+    });
+    let info = await transporter.sendMail({
+      from: 'Invoice Generator <no-reply@example.com>',
+      to: clientEmail,
+      subject: 'Your Invoice',
+      text: 'Please find your invoice attached.',
+      attachments: [
+        {
+          filename,
+          path: filePath
+        }
+      ]
+    });
+    console.log('Message sent: %s', info.messageId);
+    console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
+    res.json({ success: true, previewUrl: nodemailer.getTestMessageUrl(info) });
+  } catch (err) {
+    console.error('Email error:', err);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
 });
 
 const PORT = 3000;

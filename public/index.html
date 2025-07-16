@@ -201,23 +201,64 @@
             window.location.href = '/login.html';
             return;
           }
-          const data = await res.json();
+          let data;
+          try {
+            data = await res.json();
+          } catch {
+            showError('Failed to generate invoice (invalid server response)');
+            return;
+          }
           showError(data.error || 'Failed to generate invoice');
           return;
         }
-        const data = await res.json();
+        let data;
+        try {
+          data = await res.json();
+        } catch {
+          showError('Failed to generate invoice (invalid server response)');
+          return;
+        }
         console.log('Invoice response:', data);
+        // Show download and send by email buttons
+        const clientEmail = document.getElementById('clientEmail').value;
         document.getElementById('downloadLink').innerHTML =
-          `<a href="${data.url}" class="btn btn-success btn-lg mt-3" download><i class="bi bi-download"></i> Download Invoice PDF</a>`;
+          `<a href="${data.url}" class="btn btn-success btn-lg mt-3 me-2" download><i class="bi bi-download"></i> Download Invoice PDF</a>` +
+          `<button id="sendEmailBtn" class="btn btn-primary btn-lg mt-3"><i class="bi bi-envelope"></i> Send by Email</button>`;
         document.getElementById('errorMsg').classList.add('d-none');
+        // Add event listener for send by email
+        document.getElementById('sendEmailBtn').onclick = async function() {
+          this.disabled = true;
+          this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending...';
+          try {
+            const emailRes = await fetch('/send-invoice-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filename: data.url.replace(/^\//, ''), clientEmail })
+            });
+            const emailData = await emailRes.json();
+            if (emailRes.ok && emailData.success) {
+              this.innerHTML = '<i class="bi bi-check-circle"></i> Sent!';
+              showError('Invoice sent! (Preview: <a href="' + emailData.previewUrl + '" target="_blank">View Email</a>)', 'success');
+            } else {
+              this.disabled = false;
+              this.innerHTML = '<i class="bi bi-envelope"></i> Send by Email';
+              showError(emailData.error || 'Failed to send email');
+            }
+          } catch (err) {
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-envelope"></i> Send by Email';
+            showError('Failed to send email');
+          }
+        };
       } catch (err) {
         showError('Failed to generate invoice');
       }
     };
-    function showError(msg) {
+    function showError(msg, type) {
       const el = document.getElementById('errorMsg');
-      el.textContent = msg;
-      el.classList.remove('d-none');
+      el.innerHTML = msg;
+      el.classList.remove('d-none', 'alert-danger', 'alert-success');
+      el.classList.add('alert-' + (type === 'success' ? 'success' : 'danger'));
     }
   </script>
 </body>

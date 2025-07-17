@@ -10,6 +10,8 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
 
+require('dotenv').config();
+
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
@@ -220,15 +222,11 @@ app.post('/send-invoice-email', async (req, res) => {
     return res.status(404).json({ error: 'Invoice file not found' });
   }
   try {
-    // Use Ethereal for test emails (replace with real SMTP for production)
-    let testAccount = await nodemailer.createTestAccount();
     let transporter = nodemailer.createTransport({
-      host: testAccount.smtp.host,
-      port: testAccount.smtp.port,
-      secure: testAccount.smtp.secure,
+      service: 'gmail',
       auth: {
-        user: testAccount.user,
-        pass: testAccount.pass
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
       }
     });
     let info = await transporter.sendMail({
@@ -244,8 +242,8 @@ app.post('/send-invoice-email', async (req, res) => {
       ]
     });
     console.log('Message sent: %s', info.messageId);
-    console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
-    res.json({ success: true, previewUrl: nodemailer.getTestMessageUrl(info) });
+    // console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info)); // Ethereal specific
+    res.json({ success: true }); // Removed previewUrl as it's for Ethereal
   } catch (err) {
     console.error('Email error:', err);
     res.status(500).json({ error: 'Failed to send email' });
